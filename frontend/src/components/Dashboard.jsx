@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { logout as logoutApi, getUserAchievements } from "../services/api";
+import { logout as logoutApi, getUserAchievements, createOrder } from "../services/api";
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import badgeIcon from '../assets/badge.svg';
+import { OrderModal } from './OrderModal';
 
 dayjs.extend(relativeTime);
 
@@ -11,6 +12,10 @@ export const Dashboard = () => {
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [orderError, setOrderError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const navigate = useNavigate();
 
   const fetchAchievements = async () => {
@@ -27,7 +32,6 @@ export const Dashboard = () => {
     try {
       const data = await getUserAchievements(userId, token);
       
-      // Map API response to component state
       setUserData({
         userName: userName || "User",
         current_badge: data.current_badge || "No Badge Yet",
@@ -51,7 +55,6 @@ export const Dashboard = () => {
       setIsLoading(false);
       
       if (err.status === 401) {
-        // Token expired or invalid, redirect to login
         localStorage.clear();
         navigate("/login");
       } else {
@@ -73,13 +76,40 @@ export const Dashboard = () => {
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
-      // Always clear localStorage and redirect, even if API call fails
       localStorage.removeItem("authToken");
       localStorage.removeItem("userId");
       localStorage.removeItem("userName");
       localStorage.removeItem("userEmail");
       localStorage.removeItem("isAuthenticated");
       navigate("/login");
+    }
+  };
+
+  const handleCreateOrder = async (amount) => {
+    const token = localStorage.getItem("authToken");
+    setIsCreatingOrder(true);
+    setOrderError(null);
+
+    try {
+      await createOrder(amount, token);
+      setIsModalOpen(false);
+      setSuccessMessage("Order created successfully!");
+      
+      setIsLoading(true);
+      await fetchAchievements();
+      
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setIsCreatingOrder(false);
+      
+      if (err.status === 401) {
+        localStorage.clear();
+        navigate("/login");
+      } else if (err.status === 422 && err.errors) {
+        setOrderError(err.errors.amount?.[0] || "Invalid order amount");
+      } else {
+        setOrderError(err.message || "Failed to create order");
+      }
     }
   };
 
@@ -134,17 +164,31 @@ export const Dashboard = () => {
             <h1 className="text-2xl md:text-3xl font-bold font-brand text-teal-600">
               BADGER
             </h1>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm bg-white hover:bg-gray-50 text-gray-700 rounded-lg transition-colors border border-gray-300"
-            >
-              Logout
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="px-4 py-2 text-sm bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors"
+              >
+                Create Order
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm bg-white hover:bg-gray-50 text-gray-700 rounded-lg transition-colors border border-gray-300"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {successMessage && (
+          <div className="mb-6 bg-teal-50 border border-teal-200 text-teal-700 px-6 py-4 rounded-lg animate-fadeIn">
+            <p className="font-semibold">{successMessage}</p>
+          </div>
+        )}
+
         <div className="mb-8 animate-fadeIn">
           <h2 className="text-3xl md:text-4xl font-bold mb-2 text-gray-900">Welcome back, {userData.userName}!</h2>
           <p className="text-gray-600">Track your achievements and unlock exclusive rewards</p>
@@ -251,6 +295,17 @@ export const Dashboard = () => {
           </div>
         </div>
       </main>
+
+      <OrderModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setOrderError(null);
+        }}
+        onSubmit={handleCreateOrder}
+        isLoading={isCreatingOrder}
+        error={orderError}
+      />
     </div>
   );
 };

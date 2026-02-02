@@ -68,3 +68,27 @@ export const getUserAchievements = async (userId, token) => {
 
   return data;
 };
+
+export const createOrder = async (amount, token) => {
+  const response = await fetch(`${API_BASE_URL}/api/orders`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({ amount }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw {
+      status: response.status,
+      message: data.message || 'Failed to create order',
+      errors: data.errors || null,
+    };
+  }
+
+  return data;
+};

@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\Badge;
 use App\Models\User;
 use App\Services\BadgeService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -37,7 +38,7 @@ class UserAchievementsResource extends JsonResource
         return $this->resource->badges
             ->map(fn ($badge) => [
                 ...$this->baseBadgeData($badge),
-                'unlocked_at' => $badge->pivot->unlocked_at,
+                'unlocked_at' => Carbon::parse($badge->pivot->unlocked_at)->toIso8601String(),
             ])
             ->values()
             ->toArray();

@@ -19,7 +19,6 @@ export const Login = () => {
     try {
       const data = await loginApi(email, password);
       
-      // Store authentication data
       localStorage.setItem("authToken", data.token);
       localStorage.setItem("userId", data.user.id.toString());
       localStorage.setItem("userName", data.user.name);
