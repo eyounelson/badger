@@ -1,50 +1,86 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { logout as logoutApi, getUserAchievements } from "../services/api";
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import badgeIcon from '../assets/badge.svg';
 
-// Mock data - in production this would come from API
-const mockUserData = {
-  userName: "John Doe",
-  current_badge: "Bronze Member",
-  next_badge: "Silver Member",
-  remaining_to_unlock_next_badge: 3,
-  unlocked_achievements: [
-    { id: 1, name: "First Purchase", icon: "🎯", date: "2 days ago" },
-    { id: 2, name: "Early Adopter", icon: "⭐", date: "5 days ago" },
-    { id: 3, name: "Weekend Warrior", icon: "🔥", date: "1 week ago" },
-    { id: 4, name: "Loyal Customer", icon: "💎", date: "2 weeks ago" },
-    { id: 5, name: "Big Spender", icon: "💰", date: "3 weeks ago" }
-  ],
-  next_available_achievements: [
-    { id: 6, name: "Bulk Buyer", icon: "📦", description: "Purchase 10+ items in one order" },
-    { id: 7, name: "Product Explorer", icon: "🔍", description: "Browse 50+ products" },
-    { id: 8, name: "Review Master", icon: "✍️", description: "Write 5 product reviews" }
-  ]
-};
+dayjs.extend(relativeTime);
 
 export const Dashboard = () => {
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Check if user is authenticated
+  const fetchAchievements = async () => {
     const isAuth = localStorage.getItem("isAuthenticated");
-    if (!isAuth) {
+    const token = localStorage.getItem("authToken");
+    const userId = localStorage.getItem("userId");
+    const userName = localStorage.getItem("userName");
+    
+    if (!isAuth || !token || !userId) {
       navigate("/login");
       return;
     }
 
-    // Simulate API call
-    setTimeout(() => {
-      setUserData(mockUserData);
+    try {
+      const data = await getUserAchievements(userId, token);
+      
+      // Map API response to component state
+      setUserData({
+        userName: userName || "User",
+        current_badge: data.current_badge || "No Badge Yet",
+        next_badge: data.next_badge || "All Unlocked",
+        remaining_to_unlock_next_badge: data.remaining_to_unlock_next_badge || 0,
+        unlocked_achievements: data.unlocked_achievements.map((achievement, index) => ({
+          id: index + 1,
+          name: achievement.name,
+          icon: achievement.icon,
+          date: dayjs(achievement.unlocked_at).fromNow(),
+        })),
+        next_available_achievements: data.next_available_achievements.map((achievement, index) => ({
+          id: index + 100,
+          name: achievement.name,
+          icon: achievement.icon,
+          description: `${achievement.progress.current}/${achievement.progress.required} purchases`,
+        })),
+      });
       setIsLoading(false);
-    }, 500);
+    } catch (err) {
+      setIsLoading(false);
+      
+      if (err.status === 401) {
+        // Token expired or invalid, redirect to login
+        localStorage.clear();
+        navigate("/login");
+      } else {
+        setError(err.message || "Failed to load achievements");
+      }
+    }
+  };
+
+
+  useEffect(() => {
+    fetchAchievements();
   }, [navigate]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("userEmail");
-    navigate("/login");
+  const handleLogout = async () => {
+    const token = localStorage.getItem("authToken");
+    
+    try {
+      await logoutApi(token);
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+      // Always clear localStorage and redirect, even if API call fails
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userName");
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("isAuthenticated");
+      navigate("/login");
+    }
   };
 
   const progressPercentage = userData 
@@ -53,10 +89,38 @@ export const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-teal-500 mx-auto"></div>
-          <p className="mt-4 text-gray-400">Loading your achievements...</p>
+          <p className="mt-4 text-gray-600">Loading your achievements...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl md:text-3xl font-bold font-brand text-teal-600">
+                BADGER
+              </h1>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm bg-white hover:bg-gray-50 text-gray-700 rounded-lg transition-colors border border-gray-300"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </header>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg">
+            <p className="font-semibold mb-1">Error Loading Achievements</p>
+            <p className="text-sm">{error}</p>
+          </div>
         </div>
       </div>
     );
@@ -91,9 +155,11 @@ export const Dashboard = () => {
             <div className="flex flex-col md:flex-row items-center gap-8">
               <div className="shrink-0">
                 <div className="w-32 h-32 md:w-40 md:h-40 rounded-full tier-badge flex items-center justify-center">
-                  <svg className="w-16 h-16 md:w-20 md:h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
+                  <img 
+                    src={badgeIcon} 
+                    className="w-16 h-16 md:w-20 md:h-20" 
+                    alt="Current Badge"
+                  />
                 </div>
               </div>
               
